@@ -8,6 +8,10 @@ import { cn } from "@/lib/utils";
 const urls = new Map<string, string>();
 const VISUAL_CHAPTER_SEC = 18;
 
+function spokenUrl(lessonId: string, chapter: number) {
+  return `/audio/${lessonId}/${chapter}.mp3`;
+}
+
 async function fetchChapter(lessonId: string, chapter: number) {
   const key = `${lessonId}:${chapter}`;
   const cached = urls.get(key);
@@ -28,6 +32,9 @@ async function fetchChapter(lessonId: string, chapter: number) {
     throw new Error(msg);
   }
   const blob = await res.blob();
+  if (!blob.size || (blob.type && !blob.type.startsWith("audio"))) {
+    throw new Error("Audio is not available");
+  }
   const url = URL.createObjectURL(blob);
   urls.set(key, url);
   return url;
@@ -87,6 +94,7 @@ export function LectureFilm({
   const onDoneRef = useRef(onDone);
   const onChapterRef = useRef(onChapter);
   const finished = useRef(false);
+  const playGen = useRef(0);
   const [index, setIndex] = useState(0);
   const [hasSrc, setHasSrc] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -160,6 +168,7 @@ export function LectureFilm({
     const part = current.chapters[nextIndex];
     const audio = audioRef.current;
     if (!part || !audio) return;
+    const ticket = ++playGen.current;
     setIndex(nextIndex);
     indexRef.current = nextIndex;
     onChapterRef.current?.(nextIndex);
@@ -167,8 +176,32 @@ export function LectureFilm({
     setLocal(0);
     setLoading(true);
     setPlaying(true);
+    setTime(0);
+    audio.muted = false;
+    audio.volume = 1;
+    // Start playback inside the click. A waited-for network call drops the
+    // gesture, and the film then advances with captions and no voice.
+    audio.src = spokenUrl(current.id, nextIndex);
+    setHasSrc(true);
+    try {
+      await audio.play();
+      if (ticket !== playGen.current) return;
+      setLoading(false);
+      const upcoming = current.chapters[nextIndex + 1];
+      if (upcoming) {
+        const warm = new Audio();
+        warm.preload = "auto";
+        warm.src = spokenUrl(current.id, nextIndex + 1);
+      }
+      return;
+    } catch (err) {
+      if (ticket !== playGen.current) return;
+      const name = err instanceof DOMException ? err.name : "";
+      if (name === "AbortError") return;
+    }
     try {
       const url = await fetchChapter(current.id, nextIndex);
+      if (ticket !== playGen.current) return;
       audio.src = url;
       setHasSrc(true);
       setTime(0);
@@ -177,10 +210,11 @@ export function LectureFilm({
         void fetchChapter(current.id, nextIndex + 1).catch(() => undefined);
       }
     } catch (err) {
+      if (ticket !== playGen.current) return;
       setHasSrc(false);
       setError(err instanceof Error ? err.message : "Audio is not available");
     } finally {
-      setLoading(false);
+      if (ticket === playGen.current) setLoading(false);
     }
   }
 
@@ -331,6 +365,7 @@ export function LectureFilm({
             ref={audioRef}
             className="sr-only"
             preload="none"
+            playsInline
             onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
             onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
             onEnded={() => {

@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/tts")({
         if (!result.ok) {
           return Response.json({ error: result.error }, { status: result.status });
         }
-        return new Response(result.audio, {
+        return new Response(new Uint8Array(result.audio), {
           headers: {
             "Content-Type": "audio/mpeg",
             "Cache-Control": "private, max-age=86400",

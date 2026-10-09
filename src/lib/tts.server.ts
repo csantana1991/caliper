@@ -1,4 +1,5 @@
 import { getLesson } from "@/lib/content/lessons";
+import { env } from "@/lib/env.server";
 
 const cache = new Map<string, ArrayBuffer>();
 const inflight = new Map<string, Promise<ArrayBuffer>>();
@@ -6,7 +7,7 @@ const inflight = new Map<string, Promise<ArrayBuffer>>();
 const MAX_CHARS = 4500;
 
 export function ttsKeyAvailable() {
-  return Boolean(process.env.XAI_API_KEY?.trim());
+  return Boolean(env("XAI_API_KEY"));
 }
 
 export async function synthesizeChapter(lessonId: string, chapter: number) {
@@ -19,7 +20,7 @@ export async function synthesizeChapter(lessonId: string, chapter: number) {
     return { ok: false as const, status: 400, error: "Chapter too long" };
   }
 
-  const apiKey = process.env.XAI_API_KEY?.trim();
+  const apiKey = env("XAI_API_KEY");
   if (!apiKey) {
     return { ok: false as const, status: 503, error: "Audio is not available" };
   }
